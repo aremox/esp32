@@ -108,6 +108,7 @@ network:
 api:
   encryption:
     key: gBTyoXXxsnpRJAkWOPgPgQzSqEdEFSsE7yDXjXgBdys=
+  reboot_timeout: 2h
 
 
 wifi:
