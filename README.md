@@ -1,6 +1,6 @@
 # 🔌 Athom Smart Plug - ESPHome Custom Firmware con Vigilante Web
 
-Este repositorio contiene la configuración avanzada de ESPHome para los enchufes inteligentes **Athom Smart Plug (Modelos V2 y V3)**. La principal mejora es un sistema de **"Vigilante de Red" (Watchdog)** que monitoriza la conexión a Internet y reinicia automáticamente el dispositivo conectado (ideal para routers o nodos mesh) si detecta una caída persistente.
+Este repositorio contiene la configuración avanzada de ESPHome para los enchufes inteligentes **Athom Smart Plug (Modelos V2 y V3)**. La principal mejora es un sistema de **"Vigilante de Red" (Watchdog)** que monitoriza la conexión a Internet y reinicia automáticamente el dispositivo conectado (ideal para routers o nodos mesh) si detecta una caída persistente. Reinicia el router solo cuando se queda tostado.
 
 ---
 
