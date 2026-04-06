@@ -1,6 +1,6 @@
 substitutions:
-  name: "athom-smart-plug-v3-bc5a18"
-  friendly_name: "Athom Plug V3 bc5a18"
+  name: "athom-smart-plug-v3"
+  friendly_name: "Athom Plug V3 despacho"
   room: "Despacho"
   device_description: "Athom ESP32-C3 con Vigilante Web"
   project_name: "China Athom Technology.Smart Plug V3"
@@ -21,7 +21,7 @@ substitutions:
   ipv6_enable: "false"
   power_plug_type: "power-socket-eu"
   # --- VIGILANTE ---
-  comprobacion_cada: 60s
+  comprobacion_cada: 120s
   max_fallos_y: "3"
   tiempo_apagado_z: 10s
   url_objetivo: "http://google.com"
@@ -41,8 +41,24 @@ esp32:
   framework:
     type: esp-idf
     sdkconfig_options:
-      CONFIG_ESP_TASK_WDT_TIMEOUT_S: "20" # Aumenta el tiempo del Watchdog a 20 segundos
-      CONFIG_BT_ENABLED: n # Asegúrate de que el BT esté apagado como hablamos
+      CONFIG_ESP_TASK_WDT_TIMEOUT_S: "10" # Aumenta el tiempo del Watchdog a 20 segundos
+      CONFIG_BT_ENABLED: y # <-- VOLVEMOS A ENCENDER EL CHIP BLUETOOTH
+      CONFIG_BT_BLE_42_FEATURES_SUPPORTED: y
+      CONFIG_BT_BLE_50_FEATURES_SUPPORTED: y
+
+esp32_ble_tracker:
+  scan_parameters:
+    continuous: false
+    # Bermuda necesita actualizaciones frecuentes, pero no podemos asfixiar al ESP32-C3
+    interval: 320ms
+    window: 300ms # Escanea el 78% del tiempo. Deja un margen para el WiFi y el HTTP.
+    active: true  # CRÍTICO para Bermuda: permite leer iBeacons y dispositivos Apple correctamente.
+
+bluetooth_proxy:
+  # CRÍTICO PARA LA RAM: Lo ponemos en 'false'. 
+  # Bermuda SOLO necesita rastrear balizas, no necesita conectarse a ellas para controlarlas.
+  # Esto evita que el ESP32 colapse por saturación de conexiones.
+  active: true
 
 # Definimos el switch primero para que los scripts lo reconozcan
 switch:
@@ -110,7 +126,7 @@ http_request:
 
 # Lógica del vigilante corregida
 interval:
-  - interval: 60s 
+  - interval: ${comprobacion_cada} 
     then:
       - if:
           condition:
@@ -157,12 +173,14 @@ interval:
 api:
   encryption:
     key: "y6rHAa6ZTaLLq/Lnm1tJuanp3kx/OKZDDaKujuiIf2s="
+  reboot_timeout: 2h
 
 ota:
   - platform: esphome
 
 logger:
   level: ${log_level}
+  baud_rate: 0
 
 web_server:
   port: 80
@@ -175,6 +193,8 @@ wifi:
 uart:
   rx_pin: GPIO20
   baud_rate: 4800
+  data_bits: 8
+  stop_bits: 1
   parity: EVEN
 
 select:
@@ -354,19 +374,17 @@ button:
             state: ON
         - logger.log: "Contador de fallos reseteado manualmente"
 
+
 light:
-  - platform: binary
+  - platform: status_led
     name: "Status LED"
-    output: led_out
+    id: blue_led
     icon: mdi:lightbulb-outline
-
-output:
-  - platform: gpio
+    disabled_by_default: true
     pin:
-      number: GPIO6
       inverted: true
-    id: led_out
-
+      number: GPIO6
+      
 text_sensor:
   - platform: wifi_info
     ip_address:
