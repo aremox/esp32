@@ -106,8 +106,6 @@ network:
   enable_ipv6: ${ipv6_enable}
 
 api:
-  encryption:
-    key: gBTyoXXxsnpRJAkWOPgPgQzSqEdEFSsE7yDXjXgBdys=
   reboot_timeout: 2h
 
 
