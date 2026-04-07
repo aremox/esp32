@@ -50,8 +50,8 @@ esp32_ble_tracker:
   scan_parameters:
     continuous: false
     # Bermuda necesita actualizaciones frecuentes, pero no podemos asfixiar al ESP32-C3
-    interval: 320ms
-    window: 300ms # Escanea el 78% del tiempo. Deja un margen para el WiFi y el HTTP.
+    interval: 520ms
+    window: 100ms # Escanea el 78% del tiempo. Deja un margen para el WiFi y el HTTP.
     active: true  # CRÍTICO para Bermuda: permite leer iBeacons y dispositivos Apple correctamente.
 
 bluetooth_proxy:
@@ -118,50 +118,40 @@ globals:
 
 # 1. Ajusta el componente HTTP para que sea más ligero
 http_request:
+  verify_ssl: false
   useragent: esphome/device
   timeout: 3s # No le des mucho tiempo para que no bloquee
 # Sustituimos buffer_size por estos dos:
   buffer_size_tx: 1024
   buffer_size_rx: 2048 # Un poco más para la recepción por seguridad
 
-# Lógica del vigilante corregida
+# Lógica del vigilante simplificada
 interval:
-  - interval: ${comprobacion_cada} 
+  - interval: ${comprobacion_cada}
     then:
-      - if:
-          condition:
-            lambda: |-
-              // Solo entramos si NO hay peticion fuera Y NO estamos en los 10 min de pausa
-              return id(peticion_en_curso) || id(bloqueado_por_reinicio);
-          then:
-            - lambda: ESP_LOGD("Vigilante", "Salto de ciclo- Sistema ocupado o en pausa.");
-          else:
-            - lambda: |-
-                id(peticion_en_curso) = true;
-                ESP_LOGI("web_check", "Lanzando petición a ${url_objetivo}...");
-            - http_request.get:
-                url: ${url_objetivo}
-                on_response:
-                  then:
-                    - lambda: |-
-                        id(peticion_en_curso) = false; // LIBERAR AQUÍ
-                        int status = response->status_code;
-                        if (status >= 200 && status < 300) {
-                          id(contador_fallos) = 0;
-                          id(estado_web).publish_state(true);
-                          ESP_LOGI("web_check", "Web OK: %d", status);
-                        } else {
-                          id(contador_fallos) += 1;
-                          id(estado_web).publish_state(false);
-                          ESP_LOGW("web_check", "Respuesta errónea: %d. Fallos: %d", status, id(contador_fallos));
-                        }
-                on_error:
-                  then:
-                    - lambda: |-
-                        id(peticion_en_curso) = false; // LIBERAR TAMBIÉN AQUÍ
-                        id(contador_fallos) += 1;
-                        id(estado_web).publish_state(false);
-                        ESP_LOGE("web_check", "Error de conexión/DNS. Fallos: %d", id(contador_fallos));
+      - http_request.get:
+          url: ${url_objetivo}
+          request_headers:
+            Connection: close
+          on_response:
+            then:
+              - lambda: |-
+                  int status = response->status_code;
+                  if ((status >= 200 && status < 400) || (id(bloqueado_por_reinicio) == true)) {
+                    id(contador_fallos) = 0;
+                    id(estado_web).publish_state(true);
+                    ESP_LOGI("web_check", "Web OK: %d", status);
+                  } else {
+                    id(contador_fallos) += 1;
+                    id(estado_web).publish_state(false);
+                    ESP_LOGW("web_check", "Respuesta errónea: %d. Fallos: %d", status, id(contador_fallos));
+                  }
+          on_error:
+            then:
+              - lambda: |-
+                  id(contador_fallos) += 1;
+                  id(estado_web).publish_state(false);
+                  ESP_LOGE("web_check", "Error de conexión/DNS. Fallos: %d", id(contador_fallos));
 
       # Evaluación del umbral de fallos
       - if:
@@ -171,8 +161,6 @@ interval:
             - script.execute: ciclo_reinicio_por_fallo
 
 api:
-  encryption:
-    key: "y6rHAa6ZTaLLq/Lnm1tJuanp3kx/OKZDDaKujuiIf2s="
   reboot_timeout: 2h
 
 ota:
