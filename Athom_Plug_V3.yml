@@ -74,20 +74,33 @@ script:
   - id: ciclo_reinicio_por_fallo
     mode: single
     then:
-      - lambda: id(bloqueado_por_reinicio) = true; # Bloqueamos el intervalo
-      - logger.log: "Web caída detectada. Reiniciando..."
-      # Registramos el evento
+      - logger.log:
+          level: INFO
+          format: "=== [VIGILANTE] INICIANDO CICLO DE REINICIO ==="
+          
+      - lambda: |-
+          id(bloqueado_por_reinicio) = true;
       - lambda: |-
           id(total_reboot_count) += 1;
           id(ultima_accion_web).publish_state(id(sntp_time).now().strftime("%d/%m/%Y %H:%M:%S"));
       - switch.turn_off: relay_id
       - delay: ${tiempo_apagado_z}
+      - logger.log:
+          level: INFO
+          format: "Paso 5: Encendiendo el enchufe/relé..."
       - switch.turn_on: relay_id      
-      - lambda: id(contador_fallos) = 0;
-      - logger.log: "Iniciando pausa de 10 minutos..."
+      - lambda: |-
+          ESP_LOGI("script_reinicio", "Paso 6: Reseteando el contador de fallos actuales a 0");
+          id(contador_fallos) = 0;
+      - logger.log:
+          level: INFO
+          format: "Paso 7: Iniciando pausa de 10 minutos para dar tiempo a que el router arranque..."
       - delay: 10min
-      - lambda: id(bloqueado_por_reinicio) = false; # Liberamos el intervalo
-      - logger.log: "Pausa de 10 min terminada. Vigilancia reactivada."
+      - lambda: |-
+          id(bloqueado_por_reinicio) = false;
+      - logger.log:
+          level: INFO
+          format: "=== [VIGILANTE] PAUSA TERMINADA. VIGILANCIA REACTIVADA ==="
 
 
 globals:
@@ -129,36 +142,46 @@ http_request:
 interval:
   - interval: ${comprobacion_cada}
     then:
-      - http_request.get:
-          url: ${url_objetivo}
-          request_headers:
-            Connection: close
-          on_response:
-            then:
-              - lambda: |-
-                  int status = response->status_code;
-                  if ((status >= 200 && status < 400) || (id(bloqueado_por_reinicio) == true)) {
-                    id(contador_fallos) = 0;
-                    id(estado_web).publish_state(true);
-                    ESP_LOGI("web_check", "Web OK: %d", status);
-                  } else {
-                    id(contador_fallos) += 1;
-                    id(estado_web).publish_state(false);
-                    ESP_LOGW("web_check", "Respuesta errónea: %d. Fallos: %d", status, id(contador_fallos));
-                  }
-          on_error:
-            then:
-              - lambda: |-
-                  id(contador_fallos) += 1;
-                  id(estado_web).publish_state(false);
-                  ESP_LOGE("web_check", "Error de conexión/DNS. Fallos: %d", id(contador_fallos));
-
-      # Evaluación del umbral de fallos
+      # 1. Comprobamos ANTES de hacer nada si estamos bloqueados
       - if:
           condition:
-            lambda: 'return id(contador_fallos) >= atoi("${max_fallos_y}");'
+            lambda: 'return id(bloqueado_por_reinicio);'
           then:
-            - script.execute: ciclo_reinicio_por_fallo
+            # Si es true, salimos con un log y no hacemos la petición HTTP
+            - lambda: ESP_LOGI("web_check", "Pendiente de terminar reinicio");
+          
+          else:
+            # Si es false, ejecutamos la petición HTTP normal
+            - http_request.get:
+                url: ${url_objetivo}
+                request_headers:
+                  Connection: close
+                on_response:
+                  then:
+                    - lambda: |-
+                        int status = response->status_code;
+                        if (status >= 200 && status < 400) {
+                          id(contador_fallos) = 0;
+                          id(estado_web).publish_state(true);
+                          ESP_LOGI("web_check", "Web OK: %d", status);
+                        } else {
+                          id(contador_fallos) += 1;
+                          id(estado_web).publish_state(false);
+                          ESP_LOGW("web_check", "Respuesta errónea: %d. Fallos: %d", status, id(contador_fallos));
+                        }
+                on_error:
+                  then:
+                    - lambda: |-
+                        id(contador_fallos) += 1;
+                        id(estado_web).publish_state(false);
+                        ESP_LOGE("web_check", "Error de conexión/DNS. Fallos: %d", id(contador_fallos));
+
+            # Evaluación del umbral de fallos (dentro del else, para que no se evalúe si estamos en pausa)
+            - if:
+                condition:
+                  lambda: 'return id(contador_fallos) >= atoi("${max_fallos_y}");'
+                then:
+                  - script.execute: ciclo_reinicio_por_fallo
 
 api:
   reboot_timeout: 2h
